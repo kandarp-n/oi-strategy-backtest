@@ -30,12 +30,14 @@ from src.option_costs import option_net_pnl
 @dataclass
 class SizingParams:
     start_capital: float = 200_000.0
-    risk_pct: float = 0.25          # fraction of FREE cash to allocate per trade
-    cap_pct_of_equity: float = 0.50 # never deploy more than this fraction of current equity in one trade
+    risk_pct: float = 0.25          # fraction to allocate per trade
+    cap_pct_of_equity: float = 1.00 # never deploy more than this fraction of current equity in one trade
     min_lots: int = 1
     max_lots: int = 20
-    based_on: str = "free"          # "free" or "equity"
-    use_starting_capital_base: bool = False  # if True, alloc = start_capital * risk_pct (fixed)
+    based_on: str = "free"          # "free" / "equity" / "slots"
+    use_starting_capital_base: bool = False
+    max_slots: int = 4              # used when based_on="slots": # concurrent positions cap
+    slot_pct: float = 0.25          # used when based_on="slots": fraction of equity per slot
 
 
 def simulate_dynamic(trades_csv: str, p: SizingParams) -> dict:
@@ -67,11 +69,18 @@ def simulate_dynamic(trades_csv: str, p: SizingParams) -> dict:
             if one_lot_cost <= 0:
                 continue
             # decide allocation
-            if p.use_starting_capital_base:
+            n_open = len(locked_per_trade)
+            if p.based_on == "slots":
+                if n_open >= p.max_slots:
+                    skipped_zero_lots += 1
+                    continue
+                alloc = equity_now * p.slot_pct
+            elif p.use_starting_capital_base:
                 alloc = p.start_capital * p.risk_pct
-            else:
-                base = free if p.based_on == "free" else equity_now
-                alloc = base * p.risk_pct
+            elif p.based_on == "equity":
+                alloc = equity_now * p.risk_pct
+            else:  # "free"
+                alloc = free * p.risk_pct
             # cap by % of current equity (sanity)
             alloc = min(alloc, equity_now * p.cap_pct_of_equity)
             # cap by free cash (cannot use more than we have free)
