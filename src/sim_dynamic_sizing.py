@@ -38,6 +38,10 @@ class SizingParams:
     use_starting_capital_base: bool = False
     max_slots: int = 4              # used when based_on="slots": # concurrent positions cap
     slot_pct: float = 0.25          # used when based_on="slots": fraction of equity per slot
+    # Liquidity cap: never let our qty exceed liq_cap_pct of the average prior-N-bars option volume.
+    # Set to 0 to disable.
+    liq_cap_pct: float = 0.0        # e.g. 0.10 = max 10% of recent option volume
+    liq_lookback_bars: int = 6      # 6 bars * 5 min = last 30 min
 
 
 def simulate_dynamic(trades_csv: str, p: SizingParams) -> dict:
@@ -45,6 +49,38 @@ def simulate_dynamic(trades_csv: str, p: SizingParams) -> dict:
                 .sort_values("entry_ts").reset_index(drop=True)
     # Recover lot_size: qty in the CSV = lot_size * 3 (since v4c used fut_lots=3)
     trades["lot_size"] = (trades["qty"] / 3).round().astype(int)
+
+    # Optional: pre-compute average prior-N-bars option volume for each trade
+    # We need to look up the option parquet. The CSV doesn't store security_id,
+    # so reconstruct via scrip-master.
+    avg_prior_vol = None
+    if p.liq_cap_pct > 0:
+        master = pd.read_csv(os.path.join(ROOT, "data", "scrip-master.csv"), low_memory=False)
+        opts = master[(master["EXCH_ID"]=="NSE") & (master["INSTRUMENT"]=="OPTSTK")].copy()
+        opts["SM_EXPIRY_DATE"] = pd.to_datetime(opts["SM_EXPIRY_DATE"], errors="coerce")
+        opts["STRIKE_PRICE"] = opts["STRIKE_PRICE"].astype(float)
+        opts["SECURITY_ID"] = opts["SECURITY_ID"].astype(int)
+        key = opts.set_index(["UNDERLYING_SYMBOL","SM_EXPIRY_DATE","OPTION_TYPE","STRIKE_PRICE"])["SECURITY_ID"]
+        trades["expiry_dt"] = pd.to_datetime(trades["expiry"])
+        prior_vols = []
+        # cache option parquets keyed by sid
+        opt_cache: dict = {}
+        for _, r in trades.iterrows():
+            try:
+                sid = int(key.loc[(r["symbol"], r["expiry_dt"], r["opt_type"], r["strike"])])
+            except KeyError:
+                prior_vols.append(0); continue
+            if sid not in opt_cache:
+                path = os.path.join(ROOT, "data", "opt", f"opt_{sid}.parquet")
+                opt_cache[sid] = pd.read_parquet(path) if os.path.exists(path) else pd.DataFrame()
+            d = opt_cache[sid]
+            if d.empty:
+                prior_vols.append(0); continue
+            # prior bars before entry_ts within same day
+            mask = (d["ts"] < r["entry_ts"]) & (d["ts"].dt.date == r["entry_ts"].date())
+            recent = d.loc[mask].tail(p.liq_lookback_bars)
+            prior_vols.append(float(recent["o_vol"].mean()) if not recent.empty else 0.0)
+        trades["avg_prior_vol"] = prior_vols
 
     free = p.start_capital
     realised = 0.0
@@ -87,6 +123,12 @@ def simulate_dynamic(trades_csv: str, p: SizingParams) -> dict:
             alloc = min(alloc, free)
             lots = int(alloc // one_lot_cost)
             lots = max(0, min(lots, p.max_lots))
+            # Liquidity cap: max qty <= liq_cap_pct * recent option volume
+            if p.liq_cap_pct > 0 and "avg_prior_vol" in trades.columns:
+                avg_vol = float(trades.at[idx, "avg_prior_vol"])
+                max_qty_liq = int(p.liq_cap_pct * avg_vol)
+                max_lots_liq = max_qty_liq // lot_size
+                lots = min(lots, max_lots_liq)
             if lots < p.min_lots:
                 skipped_zero_lots += 1
                 continue
