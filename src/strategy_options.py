@@ -51,6 +51,12 @@ class OptParams(Params):
     premium_sl_pct: float = 0.30         # 30% stop on premium when use_premium_stops=True
     premium_tgt_pct: float = 0.60        # 60% target on premium
     fetch_only: bool = False             # if True, only pre-fetch data, no backtest
+    # v3 fix: avoid same-bar whipsaws
+    min_bars_before_stops: int = 0       # don't check SL/TGT until this many bars after entry
+    skip_entry_bar_sl_only: bool = False # if True, allow TGT on entry bar but not SL
+    # v4: break-even / trailing stops
+    breakeven_trigger_pct: float = 0.0   # >0: once spot moves this % favorable, move SL to entry
+    trail_stop_pct: float = 0.0          # >0: trail SL at this % below favorable extreme
 
 
 # ---------------- Option master & lookup ------------------------------------
@@ -318,6 +324,9 @@ def backtest_symbol_options(sym: str, p: OptParams, ouni: OptionUniverse, opt_ca
             premium_exit = premium_entry
             spot_exit = spot_entry_for_signal
             bars_held = 0
+            # Trailing/break-even state
+            spot_high = spot_entry_for_signal   # favorable extreme so far
+            spot_low = spot_entry_for_signal
             j = i + 1
             while j < n and df.iloc[j]["date"] == d:
                 br = df.iloc[j]
@@ -335,34 +344,56 @@ def backtest_symbol_options(sym: str, p: OptParams, ouni: OptionUniverse, opt_ca
                     j += 1; continue
 
                 # Spot-based triggers (default mode)
+                bars_since_entry = j - (i + 1)
+                stops_active_sl = bars_since_entry >= max(p.min_bars_before_stops,
+                                                          1 if p.skip_entry_bar_sl_only else 0)
+                stops_active_tgt = (bars_since_entry >= p.min_bars_before_stops) if not p.skip_entry_bar_sl_only \
+                                   else True
+                # Update favorable extreme and possibly tighten SL (break-even / trailing)
+                if side == "long":
+                    spot_high = max(spot_high, float(br["s_high"]))
+                    fav_move_pct = (spot_high - spot_entry_for_signal) / spot_entry_for_signal
+                    # Break-even: once fav move >= trigger, move SL to entry
+                    if p.breakeven_trigger_pct > 0 and fav_move_pct >= p.breakeven_trigger_pct:
+                        spot_sl = max(spot_sl, spot_entry_for_signal)
+                    # Trailing: SL = spot_high * (1 - trail_pct)
+                    if p.trail_stop_pct > 0 and fav_move_pct >= p.breakeven_trigger_pct:
+                        spot_sl = max(spot_sl, spot_high * (1 - p.trail_stop_pct))
+                else:  # short
+                    spot_low = min(spot_low, float(br["s_low"]))
+                    fav_move_pct = (spot_entry_for_signal - spot_low) / spot_entry_for_signal
+                    if p.breakeven_trigger_pct > 0 and fav_move_pct >= p.breakeven_trigger_pct:
+                        spot_sl = min(spot_sl, spot_entry_for_signal)
+                    if p.trail_stop_pct > 0 and fav_move_pct >= p.breakeven_trigger_pct:
+                        spot_sl = min(spot_sl, spot_low * (1 + p.trail_stop_pct))
                 if not p.use_premium_stops:
                     s_hi, s_lo = br["s_high"], br["s_low"]
                     if side == "long":
-                        if s_lo <= spot_sl:
+                        if stops_active_sl and s_lo <= spot_sl:
                             premium_exit = float(opt_row["o_close"])
                             spot_exit = spot_sl
                             exit_reason = "SL"; exit_ts = br["ts"]; break
-                        if s_hi >= spot_tgt:
+                        if stops_active_tgt and s_hi >= spot_tgt:
                             premium_exit = float(opt_row["o_close"])
                             spot_exit = spot_tgt
                             exit_reason = "TGT"; exit_ts = br["ts"]; break
                     else:
-                        if s_hi >= spot_sl:
+                        if stops_active_sl and s_hi >= spot_sl:
                             premium_exit = float(opt_row["o_close"])
                             spot_exit = spot_sl
                             exit_reason = "SL"; exit_ts = br["ts"]; break
-                        if s_lo <= spot_tgt:
+                        if stops_active_tgt and s_lo <= spot_tgt:
                             premium_exit = float(opt_row["o_close"])
                             spot_exit = spot_tgt
                             exit_reason = "TGT"; exit_ts = br["ts"]; break
                 else:
                     # Premium-based triggers
                     o_hi, o_lo = float(opt_row["o_high"]), float(opt_row["o_low"])
-                    if o_lo <= prem_sl:
+                    if stops_active_sl and o_lo <= prem_sl:
                         premium_exit = prem_sl
                         spot_exit = float(br["s_close"])
                         exit_reason = "SL"; exit_ts = br["ts"]; break
-                    if o_hi >= prem_tgt:
+                    if stops_active_tgt and o_hi >= prem_tgt:
                         premium_exit = prem_tgt
                         spot_exit = float(br["s_close"])
                         exit_reason = "TGT"; exit_ts = br["ts"]; break
