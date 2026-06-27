@@ -5,9 +5,16 @@ NSE stock futures, combined with price and volume confirmation, to identify
 stocks gaining momentum and trade the front-month future intraday.
 
 Built and backtested end-to-end against the [Dhan HQ v2 REST API](https://dhanhq.co/docs/v2/).
-**Net P&L after all Dhan brokerage + STT + statutory charges: +₹1,04,324**
-over 58 trading days (Sharpe 2.93). See [`REPORT.md`](REPORT.md) for the full
-write-up.
+
+Two execution vehicles tested for the **same OI-momentum signal**:
+
+| Vehicle | Net P&L (after Dhan brokerage + STT + statutory) | Sharpe | Report |
+|---|---|---|---|
+| Stock **Futures** (1 lot) | **₹ 1,04,324** | 2.93 | [`REPORT.md`](REPORT.md) |
+| **ATM Stock Options** (3 lots, buy CE/PE) | **₹ 2,00,877** | **5.66** | [`REPORT_OPTIONS.md`](REPORT_OPTIONS.md) |
+
+over 58 trading days. See the linked reports for full strategy specs,
+iteration logs, cost models and caveats.
 
 ## Quick start
 
@@ -37,15 +44,20 @@ python src/charts.py final
 | `src/universe.py` | Downloads instrument master, picks 43 liquid F&O stocks |
 | `src/fetch_data.py` | Pulls 5-min OHLCV (+ OI on futures) into `data/raw/*.parquet` |
 | `src/costs.py` | Dhan equity-MIS and futures-MIS cost models |
-| `src/strategy.py` | Signal generation, event-driven backtester, `Params` dataclass |
+| `src/option_costs.py` | Dhan F&O **options** intraday cost model |
+| `src/strategy.py` | Signal generation, event-driven backtester (futures/equity), `Params` dataclass |
+| `src/strategy_options.py` | ATM-options backtester (same signal, options vehicle) |
 | `src/charts.py` | Equity curve, daily PnL, per-symbol PnL, trade-PnL distribution |
-| `src/run_v7.py` | Helper that re-runs the final-iteration variants |
-| `REPORT.md` | Full strategy spec, iteration log, cost model, caveats |
-| `results/` | Backtest outputs for all 30+ tested variants |
+| `src/run_v7.py` | Helper that re-runs the final-iteration futures variants |
+| `src/run_options_sweep.py` | Sweep of options variants (spot/premium stops, 1/3 lots) |
+| `REPORT.md` | Full futures strategy spec, iteration log, cost model, caveats |
+| `REPORT_OPTIONS.md` | Options vehicle backtest + futures-vs-options head-to-head |
+| `results/` | Backtest outputs for all 30+ futures + 7 options variants |
 | `data/universe.csv` | Symbol → (spot_security_id, fut_security_id, lot_size) |
-| `data/raw/*.parquet` | Cached 5-min OHLCV+OI |
+| `data/raw/*.parquet` | Cached 5-min OHLCV+OI (futures + spot) |
+| `data/opt/*.parquet` | Cached 5-min OHLCV for ~1500 option contracts |
 
-## Headline results (final strategy `v5_tgt_lower`)
+## Headline results — Futures vehicle (`v5_tgt_lower`)
 
 | Metric | Value |
 |---|---|
@@ -59,7 +71,25 @@ python src/charts.py final
 | Sharpe (daily, annualised) | **2.93** |
 | Max drawdown | ₹–43,438 |
 
-![final equity curve](results/chart_v5_tgt_lower.png)
+![final equity curve — futures](results/chart_v5_tgt_lower.png)
+
+## Headline results — ATM Options vehicle (`opt_v2_spot_3lots`)
+
+Same signal, but each entry buys 3 lots of the front-month ATM Call (long) or Put (short):
+
+| Metric | Value |
+|---|---|
+| Trades | 172 (98 CE / 74 PE) — 4.0/day across 43 stocks |
+| Win rate | 42.4% |
+| Avg net P&L / trade | ₹1,168 |
+| Reward : risk (realised) | 2.31 : 1 |
+| Gross P&L | ₹2,27,910 |
+| **Total brokerage + taxes** | ₹27,033 (11.9% of gross) |
+| **Net P&L** | **₹2,00,877** |
+| Sharpe (daily, annualised) | **5.66** |
+| Max drawdown | ₹–70,190 |
+
+![final equity curve — options](results/chart_opt_v2_spot_3lots.png)
 
 ## Strategy logic in one paragraph
 
