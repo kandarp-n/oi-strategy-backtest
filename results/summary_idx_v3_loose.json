@@ -1,0 +1,29 @@
+{
+  "n_trades": 70,
+  "n_ce": 40,
+  "n_pe": 30,
+  "win_rate": 0.5857142857142857,
+  "avg_net": 959.5999961151786,
+  "avg_win": 2842.0285484938286,
+  "avg_loss": -1701.7645089718792,
+  "avg_premium_entry": 1220.3571428571431,
+  "total_net_pnl": 67171.9997280625,
+  "total_gross": 75324.25,
+  "total_cost": 8152.250271937502,
+  "trading_days": 40,
+  "avg_trades_per_day": 1.75,
+  "sharpe_daily_annualized": 6.630470875628205,
+  "max_drawdown_rs": -23450.326360214,
+  "exit_reason_counts": {
+    "SL": 25,
+    "OI_FLIP": 22,
+    "TIME": 19,
+    "TGT": 4
+  },
+  "per_symbol_net": {
+    "NIFTY": 9695.855316292513,
+    "BANKNIFTY": 57476.144411769994
+  },
+  "avg_bars_held": 18.571428571428573,
+  "tag": "idx_v3_loose"
+}
