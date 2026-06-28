@@ -66,6 +66,16 @@ def start(mode: str) -> dict:
     if st["running"]:
         return {"ok": False, "error": f"bot already running (pid {st['pid']}, mode {st['mode']})"}
 
+    # FIX: Remove any stale KILL file from a previous shutdown before starting.
+    # Without this, the bot would see the leftover file on its first poll and
+    # immediately exit, making it look like "Start doesn't work".
+    kill_path = os.path.join(ROOT, "live", "KILL")
+    if os.path.exists(kill_path):
+        try:
+            os.remove(kill_path)
+        except Exception:
+            pass
+
     # Map mode to CLI flag
     flag = {"PAPER": "--paper", "DRY_RUN": "--dry-run", "LIVE": "--live"}[mode]
 
@@ -114,18 +124,35 @@ def start(mode: str) -> dict:
 def stop(graceful: bool = True) -> dict:
     """Stop the bot. Graceful = create KILL file. Else = SIGTERM."""
     st = get_status()
+    kill_path = os.path.join(ROOT, "live", "KILL")
     if not st["running"]:
+        # FIX: even if bot is not running, clean up any stale KILL file +
+        # PID file so the next start is clean.
+        cleaned = []
+        if os.path.exists(kill_path):
+            try:
+                os.remove(kill_path); cleaned.append("KILL")
+            except Exception:
+                pass
+        if os.path.exists(PID_FILE):
+            try:
+                os.remove(PID_FILE); cleaned.append("bot.pid")
+            except Exception:
+                pass
+        if cleaned:
+            return {"ok": True, "error": "bot was already stopped",
+                    "method": f"cleaned stale {', '.join(cleaned)}"}
         return {"ok": False, "error": "bot is not running"}
     pid = int(st["pid"])
     if graceful:
         # Touch the KILL file -- the runner polls for this and exits cleanly
-        kill_path = os.path.join(ROOT, "live", "KILL")
         with open(kill_path, "w") as f:
             f.write(datetime.now().isoformat())
         # Wait up to 60s for graceful exit
         for _ in range(60):
             if not _is_pid_alive(pid):
-                # Clean up KILL file
+                # Bot itself removes KILL on graceful exit, but clean up here
+                # too as belt-and-braces (handles older bot versions).
                 try: os.remove(kill_path)
                 except Exception: pass
                 try: os.remove(PID_FILE)
@@ -143,7 +170,15 @@ def stop(graceful: bool = True) -> dict:
         if _is_pid_alive(pid):
             os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
     except Exception as e:
+        # FIX: Even on failure, attempt to clean up files so next start works.
+        try: os.remove(kill_path)
+        except Exception: pass
+        try: os.remove(PID_FILE)
+        except Exception: pass
         return {"ok": False, "error": str(e)}
+    # FIX: Cleanup BOTH KILL and PID on force-kill success
+    try: os.remove(kill_path)
+    except Exception: pass
     try: os.remove(PID_FILE)
     except Exception: pass
     return {"ok": True, "method": "forceful"}

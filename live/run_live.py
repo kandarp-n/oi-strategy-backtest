@@ -270,6 +270,16 @@ def main_loop(mode: str):
                         today_str=today_str)
         save_state(s, config.STATE_PATH)
 
+    # FIX: Remove any stale KILL file from a previous shutdown. Without this,
+    # the bot would see the leftover file on its first poll and immediately
+    # exit, making it look like "Start doesn't work".
+    if os.path.exists(config.KILL_FILE):
+        log.warning(f"Stale KILL file found at startup -> removing")
+        try:
+            os.remove(config.KILL_FILE)
+        except Exception as e:
+            log.error(f"Could not remove stale KILL file: {e}")
+
     stop_requested = [False]
     def _sigh(signum, frame):
         log.info(f"Signal {signum} received -> graceful shutdown")
@@ -284,6 +294,13 @@ def main_loop(mode: str):
             break
         if os.path.exists(config.KILL_FILE):
             log.warning(f"KILL file detected -> stopping. Open positions: {len(s.open_positions)}")
+            # FIX: Remove the KILL file on graceful exit so manual
+            # `touch live/KILL` -> bot exits -> file is cleaned automatically.
+            # This makes the next start clean even if user didn't use the web UI.
+            try:
+                os.remove(config.KILL_FILE)
+            except Exception as e:
+                log.error(f"Could not remove KILL file on exit: {e}")
             break
 
         # Check market hours
