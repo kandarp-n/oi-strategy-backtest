@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+web/.secret
+web/bot.pid
 
 # Python
 __pycache__/
