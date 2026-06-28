@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Config - NIFTY/BANKNIFTY Bot{% endblock %}
+{% block content %}
+{% if issues %}
+  <div class="alert alert-danger">
+    <h6>Config issues:</h6>
+    <ul class="mb-0">{% for i in issues %}<li>{{ i }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Mode & Capital</h5>
+        <table class="table table-sm">
+          <tr><th>Default Mode</th><td><b>{{ cfg.mode }}</b></td></tr>
+          <tr><th>Capital allocated</th><td>₹{{ "{:,}".format(cfg.capital_rs) }}</td></tr>
+          <tr><th>Risk per trade</th><td>{{ (cfg.risk_pct_per_trade * 100)|round(0, 'floor')|int }}% of equity</td></tr>
+          <tr><th>Max concurrent positions</th><td>{{ cfg.max_concurrent_positions }}</td></tr>
+          <tr><th>Max lots per trade</th><td>{{ cfg.max_lots_per_trade }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Risk Limits</h5>
+        <table class="table table-sm">
+          <tr><th>Daily loss stop</th><td>–₹{{ "{:,.0f}".format(cfg.risk.daily_loss_stop_rs) }}</td></tr>
+          <tr><th>Daily profit target</th><td>
+            {% if cfg.risk.daily_profit_target_rs %}+₹{{ "{:,.0f}".format(cfg.risk.daily_profit_target_rs) }}{% else %}(disabled){% endif %}
+          </td></tr>
+          <tr><th>Max trades / day</th><td>{{ cfg.risk.max_trades_per_day }}</td></tr>
+          <tr><th>Emergency stop (equity)</th><td>{{ (cfg.risk.emergency_stop_equity_frac * 100)|int }}% of start</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Strategy Parameters</h5>
+        <table class="table table-sm">
+          <tr><th>Min price move (5-min)</th><td>≥ {{ (cfg.params.price_pct * 100)|round(2) }}%</td></tr>
+          <tr><th>Min OI buildup (5-min)</th><td>≥ {{ (cfg.params.oi_pct * 100)|round(3) }}%</td></tr>
+          <tr><th>Volume z-score</th><td>≥ {{ cfg.params.vol_z }}</td></tr>
+          <tr><th>Stop loss (spot)</th><td>{{ (cfg.params.sl_pct * 100)|round(2) }}%</td></tr>
+          <tr><th>Target (spot)</th><td>{{ (cfg.params.tgt_pct * 100)|round(2) }}%</td></tr>
+          <tr><th>Break-even trigger</th><td>{{ (cfg.params.breakeven_trigger_pct * 100)|round(2) }}% favorable</td></tr>
+          <tr><th>Trailing stop</th><td>{{ (cfg.params.trail_stop_pct * 100)|round(2) }}% below extreme</td></tr>
+          <tr><th>Trading window</th><td>{{ cfg.params.entry_start }} → {{ cfg.params.entry_end }}</td></tr>
+          <tr><th>Square-off</th><td>{{ cfg.params.square_off }}</td></tr>
+          <tr><th>Trend filter (VWAP)</th><td>{{ '✓' if cfg.params.require_trend_align else '✗' }}</td></tr>
+          <tr><th>Avoid lunch (12-1pm)</th><td>{{ '✓' if cfg.params.avoid_lunch else '✗' }}</td></tr>
+          <tr><th>OI-flip exit</th><td>{{ '✓' if cfg.params.use_oi_flip_exit else '✗' }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Universe</h5>
+        <table class="table table-sm">
+          <thead><tr><th>Symbol</th><th>Spot ID</th><th>Front Future ID</th><th>Lot</th><th>Strike Step</th></tr></thead>
+          <tbody>
+          {% for u in cfg.universe %}
+            <tr><td><b>{{ u.name }}</b></td><td>{{ u.spot_sid }}</td><td>{{ u.fut_sid }}</td>
+                <td>{{ u.lot_size }}</td><td>{{ u.strike_step }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="alert alert-info small-info">
+  To modify any value, edit <code>live/config.py</code> and restart the web app + bot.
+  Config validation runs on every page load and on bot start.
+</div>
+{% endblock %}

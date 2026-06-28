@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}NIFTY/BANKNIFTY Bot{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #f5f7fa; }
+    .navbar-brand { font-weight: 600; }
+    .status-pill { font-size: 0.85rem; padding: 0.25em 0.7em; border-radius: 0.5rem; }
+    .status-on  { background: #d4edda; color: #155724; }
+    .status-off { background: #f8d7da; color: #721c24; }
+    .status-warn { background: #fff3cd; color: #856404; }
+    .card-stat { transition: transform 0.1s; }
+    .card-stat:hover { transform: translateY(-2px); }
+    .stat-value { font-size: 1.6rem; font-weight: 600; }
+    .text-mono { font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.85rem; }
+    pre.log { background: #1e1e1e; color: #e8e8e8; padding: 1rem; border-radius: 0.5rem; font-size: 0.8rem; max-height: 65vh; overflow-y: auto; }
+    .table-trades td { font-size: 0.9rem; vertical-align: middle; }
+    .pnl-pos { color: #198754; font-weight: 600; }
+    .pnl-neg { color: #dc3545; font-weight: 600; }
+    .small-info { font-size: 0.85rem; color: #6c757d; }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">📈 NIFTY/BANKNIFTY OI-Bot</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="/token">Token</a></li>
+        <li class="nav-item"><a class="nav-link" href="/trades">Trades</a></li>
+        <li class="nav-item"><a class="nav-link" href="/config">Config</a></li>
+        <li class="nav-item"><a class="nav-link" href="/logs">Logs</a></li>
+      </ul>
+      <span class="navbar-text small-info" id="status-pill"></span>
+    </div>
+  </div>
+</nav>
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+<script>
+  // Tiny top-bar status pill
+  fetch('/api/status').then(r => r.json()).then(j => {
+    const el = document.getElementById('status-pill');
+    if (!el) return;
+    const bot = j.bot || {};
+    if (bot.running) {
+      el.innerHTML = `<span class="status-pill status-on">Bot RUNNING · ${bot.mode} · pid ${bot.pid}</span>`;
+    } else {
+      el.innerHTML = `<span class="status-pill status-off">Bot STOPPED</span>`;
+    }
+  });
+</script>
+</body>
+</html>

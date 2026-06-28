@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Logs - NIFTY/BANKNIFTY Bot{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body py-2 d-flex align-items-center">
+    <h5 class="card-title m-0 me-3">Live Log</h5>
+    <button class="btn btn-sm btn-outline-secondary me-2" onclick="loadLogs(50)">Last 50</button>
+    <button class="btn btn-sm btn-outline-secondary me-2" onclick="loadLogs(200)">Last 200</button>
+    <button class="btn btn-sm btn-outline-secondary me-2" onclick="loadLogs(500)">Last 500</button>
+    <div class="form-check ms-3">
+      <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+      <label class="form-check-label small-info" for="auto-refresh">Auto-refresh (5s)</label>
+    </div>
+    <span class="ms-auto small-info" id="updated">—</span>
+  </div>
+</div>
+<pre class="log" id="log-view">Loading log...</pre>
+
+<script>
+let lineCount = 200;
+async function loadLogs(n) {
+  if (n) lineCount = n;
+  try {
+    const r = await fetch(`/api/logs?n=${lineCount}`);
+    const j = await r.json();
+    const log = j.log || '(empty)';
+    const el = document.getElementById('log-view');
+    const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    el.textContent = log;
+    if (wasAtBottom) el.scrollTop = el.scrollHeight;
+    document.getElementById('updated').textContent = `updated ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    document.getElementById('log-view').textContent = `Error: ${e.message || e}`;
+  }
+}
+loadLogs();
+setInterval(() => {
+  if (document.getElementById('auto-refresh').checked) loadLogs();
+}, 5000);
+</script>
+{% endblock %}

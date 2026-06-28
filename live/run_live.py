@@ -338,12 +338,16 @@ if __name__ == "__main__":
     elif args.live:  mode = "LIVE"
 
     if mode == "LIVE":
-        confirm = input(f"\n\n!!!! LIVE MODE — real orders will be placed with real money !!!!\n"
-                         f"Capital: Rs {config.CAPITAL_RS:,}\n"
-                         f"Type 'YES I UNDERSTAND' to continue: ")
-        if confirm.strip() != "YES I UNDERSTAND":
-            print("Aborted.")
-            sys.exit(1)
+        # Allow the web UI to bypass the interactive confirmation by setting
+        # DHAN_LIVE_CONFIRMED=yes in the environment (the web UI does this only
+        # after the user types YES in the browser dialog).
+        if os.environ.get("DHAN_LIVE_CONFIRMED") != "yes":
+            confirm = input(f"\n\n!!!! LIVE MODE — real orders will be placed with real money !!!!\n"
+                             f"Capital: Rs {config.CAPITAL_RS:,}\n"
+                             f"Type 'YES I UNDERSTAND' to continue: ")
+            if confirm.strip() != "YES I UNDERSTAND":
+                print("Aborted.")
+                sys.exit(1)
 
     setup_logging()
     issues = config.validate()

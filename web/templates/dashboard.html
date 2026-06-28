@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - NIFTY/BANKNIFTY Bot{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card card-stat">
+      <div class="card-body">
+        <div class="small-info">Bot Status</div>
+        <div class="stat-value" id="stat-bot">—</div>
+        <div class="small-info" id="stat-bot-meta"></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card card-stat">
+      <div class="card-body">
+        <div class="small-info">Today's Net P&L</div>
+        <div class="stat-value" id="stat-pnl">₹—</div>
+        <div class="small-info"><span id="stat-trades">0</span> trades today</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card card-stat">
+      <div class="card-body">
+        <div class="small-info">Running Equity</div>
+        <div class="stat-value" id="stat-equity">₹—</div>
+        <div class="small-info" id="stat-funds"></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card card-stat">
+      <div class="card-body">
+        <div class="small-info">Open Positions</div>
+        <div class="stat-value" id="stat-open">0</div>
+        <div class="small-info">Token expires: <span id="stat-token">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Bot Control</h5>
+    <div class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <select class="form-select" id="mode-select">
+          <option value="DRY_RUN">DRY_RUN — log signals only</option>
+          <option value="PAPER" selected>PAPER — simulate (recommended)</option>
+          <option value="LIVE">LIVE — real money 🚨</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-success w-100" id="btn-start" onclick="startBot()">▶ Start Bot</button>
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-danger w-100" id="btn-stop" onclick="stopBot()">■ Stop (graceful)</button>
+      </div>
+      <div class="col-md-3">
+        <div class="small-info">After clicking Start, watch the <a href="/logs">Logs</a> page.</div>
+      </div>
+    </div>
+    <div class="mt-3" id="control-msg"></div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Open Positions</h5>
+    <div id="open-pos-container">
+      <p class="small-info">No open positions.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Today's Closed Trades</h5>
+    <div id="closed-pos-container">
+      <p class="small-info">No trades closed today.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+async function refresh() {
+  try {
+    const r = await fetch('/api/status');
+    const j = await r.json();
+    const bot = j.bot || {}; const s = j.state || {}; const t = j.token || {}; const f = j.funds || {};
+
+    // Stats
+    const botEl = document.getElementById('stat-bot');
+    if (bot.running) {
+      botEl.innerHTML = `<span style="color:#198754">● ${bot.mode}</span>`;
+      document.getElementById('stat-bot-meta').textContent = `pid ${bot.pid} · since ${bot.started_at || '—'}`;
+    } else {
+      botEl.innerHTML = `<span style="color:#dc3545">○ STOPPED</span>`;
+      document.getElementById('stat-bot-meta').textContent = 'Click Start Bot below';
+    }
+
+    const pnl = s.day_net_pnl || 0;
+    const pnlEl = document.getElementById('stat-pnl');
+    pnlEl.textContent = `₹${pnl.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    pnlEl.className = 'stat-value ' + (pnl > 0 ? 'pnl-pos' : (pnl < 0 ? 'pnl-neg' : ''));
+    document.getElementById('stat-trades').textContent = s.day_trades_count || 0;
+
+    document.getElementById('stat-equity').textContent =
+      `₹${(s.running_equity || 0).toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    if (f.availabelBalance !== undefined) {
+      document.getElementById('stat-funds').textContent = `Dhan balance: ₹${Number(f.availabelBalance).toLocaleString('en-IN')}`;
+    }
+
+    document.getElementById('stat-open').textContent = (s.open_positions || []).length;
+    if (t.expiry) {
+      const exp = new Date(t.expiry);
+      const now = new Date();
+      const hrs = ((exp - now) / 1000 / 3600).toFixed(1);
+      document.getElementById('stat-token').innerHTML = t.expired
+        ? `<span class="pnl-neg">EXPIRED</span> <a href="/token">Refresh</a>`
+        : `${exp.toLocaleString()} (${hrs}h)`;
+    }
+
+    // Open positions
+    const op = s.open_positions || [];
+    const opEl = document.getElementById('open-pos-container');
+    if (op.length === 0) {
+      opEl.innerHTML = '<p class="small-info">No open positions.</p>';
+    } else {
+      opEl.innerHTML = `<table class="table table-sm table-trades">
+        <thead><tr><th>Symbol</th><th>Side</th><th>Strike</th><th>Lots</th>
+        <th>Entry Premium</th><th>Entry Spot</th><th>SL</th><th>TGT</th><th>BE?</th><th>Entry Time</th></tr></thead>
+        <tbody>${op.map(p => `<tr>
+          <td><b>${p.underlying}</b> ${p.opt_type}</td>
+          <td>${p.side}</td><td>${p.strike}</td><td>${p.lots}</td>
+          <td>₹${p.entry_premium}</td><td>${p.entry_spot}</td>
+          <td>${p.spot_sl}</td><td>${p.spot_tgt}</td>
+          <td>${p.be_triggered ? '✓' : ''}</td>
+          <td class="text-mono">${p.entry_ts}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+
+    // Closed positions today
+    const cp = s.closed_today || [];
+    const cpEl = document.getElementById('closed-pos-container');
+    if (cp.length === 0) {
+      cpEl.innerHTML = '<p class="small-info">No trades closed today.</p>';
+    } else {
+      cpEl.innerHTML = `<table class="table table-sm table-trades">
+        <thead><tr><th>Symbol</th><th>Side</th><th>Strike</th><th>Lots</th>
+        <th>Entry Px</th><th>Exit Px</th><th>Exit</th><th>Net</th></tr></thead>
+        <tbody>${cp.slice().reverse().map(p => `<tr>
+          <td><b>${p.underlying}</b> ${p.opt_type}</td>
+          <td>${p.side}</td><td>${p.strike}</td><td>${p.lots}</td>
+          <td>₹${p.entry_premium}</td><td>₹${p.exit_premium}</td>
+          <td><span class="badge bg-secondary">${p.exit_reason}</span></td>
+          <td class="${p.net_pnl > 0 ? 'pnl-pos' : 'pnl-neg'}">₹${(p.net_pnl || 0).toLocaleString('en-IN', {maximumFractionDigits:0})}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function startBot() {
+  const mode = document.getElementById('mode-select').value;
+  let body = { mode };
+  if (mode === 'LIVE') {
+    const c = confirm('You are about to start in LIVE mode — real money orders will be placed.\n\nAre you sure?');
+    if (!c) return;
+    body.confirm = 'YES';
+  }
+  const r = await fetch('/api/bot/start', { method: 'POST', headers: {'Content-Type':'application/json'},
+                                              body: JSON.stringify(body) });
+  const j = await r.json();
+  const m = document.getElementById('control-msg');
+  m.innerHTML = j.ok ? `<div class="alert alert-success">Bot started in ${j.mode} mode (pid ${j.pid}).</div>`
+                       : `<div class="alert alert-danger">${j.error || 'failed'}</div>`;
+  refresh();
+}
+
+async function stopBot() {
+  const c = confirm('Stop the bot? Open positions will be LEFT AS-IS. Square them off manually in Dhan if needed.');
+  if (!c) return;
+  const r = await fetch('/api/bot/stop', { method: 'POST' });
+  const j = await r.json();
+  const m = document.getElementById('control-msg');
+  m.innerHTML = j.ok ? `<div class="alert alert-warning">Bot stopped (${j.method}).</div>`
+                       : `<div class="alert alert-danger">${j.error || 'failed'}</div>`;
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+{% endblock %}

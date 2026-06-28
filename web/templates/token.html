@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Token - NIFTY/BANKNIFTY Bot{% endblock %}
+{% block content %}
+<div class="row">
+<div class="col-lg-8">
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Current Token Status</h5>
+    <table class="table table-sm">
+      <tr><th style="width: 25%">Dhan Client ID</th><td>{{ token.client_id or '—' }}</td></tr>
+      <tr><th>Token present?</th>
+        <td>{% if token.token_present %}<span class="status-pill status-on">YES</span>{% else %}<span class="status-pill status-off">NO</span>{% endif %}</td></tr>
+      <tr><th>Expiry (IST)</th><td>{{ token.expiry or '—' }}</td></tr>
+      <tr><th>Status</th>
+        <td>
+          {% if not token.token_present %}<span class="status-pill status-off">No token</span>
+          {% elif token.expired %}<span class="status-pill status-off">EXPIRED — refresh required</span>
+          {% else %}<span class="status-pill status-on">Valid</span>{% endif %}
+        </td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Option A — Generate token via TOTP (recommended)</div>
+  <div class="card-body">
+    <p class="small-info">
+      Requires TOTP to be enabled on your Dhan account.<br>
+      Setup once: <a href="https://web.dhan.co" target="_blank">web.dhan.co</a> → My Profile → Access DhanHQ APIs → enable TOTP and scan the QR with Google Authenticator/Authy/1Password.
+    </p>
+    <form id="gen-form">
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label">Dhan Client ID</label>
+          <input class="form-control" type="text" id="client_id"
+                 value="{{ token.client_id or '' }}" required pattern="[0-9]+"></div>
+        <div class="col-md-4"><label class="form-label">PIN (6 digits)</label>
+          <input class="form-control" type="password" id="pin" maxlength="6"
+                 inputmode="numeric" pattern="[0-9]{4,6}" required></div>
+        <div class="col-md-4"><label class="form-label">TOTP (6 digits, from authenticator)</label>
+          <input class="form-control" type="text" id="totp" maxlength="6"
+                 inputmode="numeric" pattern="[0-9]{6}" required></div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Generate fresh 24-hour token</button>
+    </form>
+    <div id="gen-msg" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Option B — Paste token manually</div>
+  <div class="card-body">
+    <p class="small-info">Get the token from <a href="https://web.dhan.co" target="_blank">web.dhan.co</a> → My Profile → Access DhanHQ APIs → Generate Access Token, then paste here.</p>
+    <form id="paste-form">
+      <div class="mb-2"><label class="form-label">Dhan Client ID (optional)</label>
+        <input class="form-control" type="text" id="paste_client_id" value="{{ token.client_id or '' }}"></div>
+      <div class="mb-2"><label class="form-label">Access Token (JWT)</label>
+        <textarea class="form-control text-mono" id="paste_token" rows="3" required placeholder="eyJ..."></textarea></div>
+      <button type="submit" class="btn btn-secondary">Save Token</button>
+    </form>
+    <div id="paste-msg" class="mt-3"></div>
+  </div>
+</div>
+
+</div>
+
+<div class="col-lg-4">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="card-title">⚙️ How it works</h6>
+      <ol style="font-size: 0.88rem;">
+        <li><b>One-time setup</b>: Enable TOTP on Dhan portal, scan the QR with an authenticator app.</li>
+        <li><b>Daily</b>: Open this page, enter Client ID, PIN, and the current 6-digit TOTP code from your authenticator.</li>
+        <li>Click <b>Generate</b>. A new 24-hour token is fetched and saved to <code>.env</code>.</li>
+        <li>The bot picks it up automatically — no restart needed.</li>
+      </ol>
+      <hr>
+      <h6 class="card-title">🔐 Security</h6>
+      <ul style="font-size: 0.88rem;">
+        <li>This UI runs on <code>localhost:5005</code> only by default. Never expose to the internet.</li>
+        <li>Your PIN and TOTP are sent only to Dhan's auth server — not stored locally.</li>
+        <li>The access token IS stored in <code>.env</code> (so the bot can use it).</li>
+        <li>Tokens are valid for 24 hours and auto-expire.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+document.getElementById('gen-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    client_id: document.getElementById('client_id').value,
+    pin: document.getElementById('pin').value,
+    totp: document.getElementById('totp').value,
+  };
+  const msg = document.getElementById('gen-msg');
+  msg.innerHTML = `<div class="alert alert-info">Requesting token...</div>`;
+  try {
+    const r = await fetch('/api/token/generate', {method:'POST', headers:{'Content-Type':'application/json'},
+                                                    body: JSON.stringify(body)});
+    const j = await r.json();
+    if (j.ok) {
+      msg.innerHTML = `<div class="alert alert-success">
+        ✓ Token generated for <b>${j.client_name || ''}</b>.<br>
+        Expires: ${j.expiry_time || '—'}<br>
+        <span class="text-mono">${j.token_preview}</span><br>
+        <small>Saved to .env. Bot will use it on next API call.</small></div>`;
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      msg.innerHTML = `<div class="alert alert-danger">${j.error || 'Failed'}</div>`;
+    }
+  } catch (e) {
+    msg.innerHTML = `<div class="alert alert-danger">${e.message || e}</div>`;
+  }
+});
+
+document.getElementById('paste-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    token: document.getElementById('paste_token').value.trim(),
+    client_id: document.getElementById('paste_client_id').value.trim(),
+  };
+  const msg = document.getElementById('paste-msg');
+  msg.innerHTML = `<div class="alert alert-info">Saving...</div>`;
+  try {
+    const r = await fetch('/api/token/paste', {method:'POST', headers:{'Content-Type':'application/json'},
+                                                  body: JSON.stringify(body)});
+    const j = await r.json();
+    if (j.ok) {
+      msg.innerHTML = `<div class="alert alert-success">✓ Token saved. Expires: ${j.expiry || 'n/a'}</div>`;
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      msg.innerHTML = `<div class="alert alert-danger">${j.error || 'Failed'}</div>`;
+    }
+  } catch (e) {
+    msg.innerHTML = `<div class="alert alert-danger">${e.message || e}</div>`;
+  }
+});
+</script>
+{% endblock %}

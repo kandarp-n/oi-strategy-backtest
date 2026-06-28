@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Trades - NIFTY/BANKNIFTY Bot{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="card-title m-0">Closed Trades Log ({{ trades|length }} shown, latest first)</h5>
+      <a href="/" class="btn btn-sm btn-outline-secondary">← Back to dashboard</a>
+    </div>
+    {% if not trades %}
+      <p class="small-info">No trades yet. Once the bot runs and closes a position, it'll appear here.</p>
+    {% else %}
+      <div class="table-responsive">
+      <table class="table table-sm table-trades table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Mode</th><th>Exit Time</th><th>Underlying</th><th>Side</th><th>Strike</th>
+            <th>Lots / Qty</th><th>Entry Px</th><th>Exit Px</th>
+            <th>Spot In→Out</th><th>Exit</th><th>Net P&L</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for t in trades %}
+          <tr>
+            <td><span class="badge {% if t.mode=='LIVE' %}bg-danger{% elif t.mode=='PAPER' %}bg-info{% else %}bg-secondary{% endif %}">{{ t.mode }}</span></td>
+            <td class="text-mono">{{ t.exit_ts }}</td>
+            <td><b>{{ t.underlying }}</b> {{ t.opt_type }}</td>
+            <td>{{ t.side }}</td>
+            <td>{{ t.strike }}</td>
+            <td>{{ t.lots }} / {{ t.qty }}</td>
+            <td>₹{{ "%.2f"|format(t.entry_premium) }}</td>
+            <td>₹{{ "%.2f"|format(t.exit_premium) }}</td>
+            <td class="text-mono">{{ "%.1f"|format(t.entry_spot) }} → {{ "%.1f"|format(t.exit_spot) }}</td>
+            <td><span class="badge bg-secondary">{{ t.exit_reason }}</span></td>
+            <td class="{% if t.net_pnl > 0 %}pnl-pos{% else %}pnl-neg{% endif %}">
+              ₹{{ "{:,.0f}".format(t.net_pnl) }}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
